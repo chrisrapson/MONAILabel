@@ -133,6 +133,7 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.ui.transformTable.connect("cellClicked(int, int)", self.onSelectTransform)
         self.ui.transformTable.connect("cellDoubleClicked(int, int)", self.onEditTransform)
         self.ui.importBundleButton.connect("clicked(bool)", self.onImportBundle)
+        self.ui.runTransformButton.connect("clicked(bool)", self.onRunTransform)
 
         # Make sure parameter node is initialized (needed for module reload)
         self.initializeParameterNode()
@@ -152,6 +153,14 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.ui.transformTable.setColumnWidth(1, 200)
         self.ui.transformTable.setEditTriggers(qt.QTableWidget.NoEditTriggers)
         self.ui.transformTable.setSelectionBehavior(qt.QTableView.SelectRows)
+
+        self.ui.imagePathLineEdit.setCurrentPath(
+            "/localhome/sachi/Datasets/Radiology/Task09_Spleen/imagesTr/spleen_2.nii.gz"
+        )
+        self.ui.labelPathLineEdit.setCurrentPath(
+            "/localhome/sachi/Datasets/Radiology/Task09_Spleen/labelsTr/spleen_2.nii.gz"
+        )
+        self.ui.textEdit.setText("{}")
 
         self.refreshVersion()
 
@@ -342,6 +351,7 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.ui.removeTransformButton.setEnabled(selected)
         self.ui.moveUpButton.setEnabled(selected and row > 0)
         self.ui.moveDownButton.setEnabled(selected and row < self.ui.transformTable.rowCount - 1)
+        self.ui.runTransformButton.setEnabled(selected)
 
     def onEditTransform(self, row=-1, col=-1):
         print(f"Selected Transform for Edit: {row}")
@@ -406,6 +416,75 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         v = str(self.ui.transformTable.item(row, 2).text())
         self.onRemoveTransform()
         self.addTransform(row + 1, None, t, v)
+
+    def onRunTransform(self):
+        image = "/localhome/sachi/Datasets/Radiology/Task09_Spleen/imagesTr/spleen_2.nii.gz"
+        label = "/localhome/sachi/Datasets/Radiology/Task09_Spleen/labelsTr/spleen_2.nii.gz"
+        additional = {}
+        data = {"image": image, "label": label}
+        data.update(additional)
+
+        row = self.ui.transformTable.currentRow()
+        if row < 0:
+            return
+
+        t = str(self.ui.transformTable.item(row, 1).text())
+        v = str(self.ui.transformTable.item(row, 2).text())
+
+        import monai
+        import numpy as np
+
+        print(monai.__version__)
+
+        exp = f"monai.transforms.{t}({v})"
+        print(exp)
+        t = eval(exp)
+
+        print(data)
+        d = t(data)
+        imageTensor = d["image"]
+        labelTensor = d["label"]
+        print(f"Image: {imageTensor.shape}")
+        print(f"Label: {labelTensor.shape}")
+
+        v = imageTensor.array
+        v = v.transpose()
+        print(f"Display Image: {v.shape}")
+        volumeNode = slicer.util.addVolumeFromArray(v)
+
+        l = labelTensor.array
+        l = l.transpose()
+        print(f"Display Label: {l.shape}")
+
+        labelNode = slicer.util.addVolumeFromArray(l, nodeClassName="vtkMRMLLabelMapVolumeNode")
+
+        affine = imageTensor.affine.numpy()
+        convert_aff_mat = np.diag([-1, -1, 1, 1])
+        affine = convert_aff_mat @ affine
+
+        dim = affine.shape[0] - 1
+        _origin_key = (slice(-1), -1)
+        _m_key = (slice(-1), slice(-1))
+
+        origin = affine[_origin_key]
+        spacing = np.linalg.norm(affine[_m_key] @ np.eye(dim), axis=0)
+        direction = affine[_m_key] @ np.diag(1 / spacing)
+        print(direction)
+
+        volumeNode.SetOrigin(origin)
+        volumeNode.SetSpacing(spacing)
+        # volumeNode.SetIJKToRASDirections(direction)
+
+        labelNode.SetOrigin(origin)
+        labelNode.SetSpacing(spacing)
+        slicer.util.setSliceViewerLayers(volumeNode, label=labelNode, fit=True)
+
+        # segmentNode.CreateClosedSurfaceRepresentation()
+        # view = slicer.app.layoutManager().threeDWidget(0).threeDView()
+        # view.resetFocalPoint()
+        self.ui.transformTable.item(row, 0).setIcon(self.icon("icons8-green-circle-48.png"))
+        if row < self.ui.transformTable.rowCount:
+            self.ui.transformTable.selectRow(row + 1)
 
     def onApply(self):
         image = "/localhome/sachi/Datasets/Radiology/Task09_Spleen/imagesTr/spleen_2.nii.gz"

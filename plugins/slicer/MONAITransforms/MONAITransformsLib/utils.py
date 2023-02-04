@@ -104,6 +104,20 @@ class MonaiUtils:
 
         return None
 
+    @staticmethod
+    def run_transform(name, args, data):
+        import monai
+
+        print(monai.__version__)
+
+        exp = f"monai.transforms.{name}({args if args else ''})"
+        print(exp)
+        t = eval(exp)
+
+        print(data)
+        d = t(data)
+        return d
+
 
 def main():
     transforms = MonaiUtils.list_transforms()
@@ -143,5 +157,15 @@ def main():
         print(f"{type(t)} => {t}")
 
 
+def main2():
+    data = {
+        "image": "/localhome/sachi/Datasets/Radiology/Task09_Spleen/imagesTr/spleen_2.nii.gz",
+        "label": "/localhome/sachi/Datasets/Radiology/Task09_Spleen/labelsTr/spleen_2.nii.gz",
+    }
+    MonaiUtils.run_transform(name="LoadImaged", args="keys=['image', 'label']", data=data)
+
+
 if __name__ == "__main__":
-    main()
+    # pip_install("monai")
+    # pip_install("nibabel")
+    main2()

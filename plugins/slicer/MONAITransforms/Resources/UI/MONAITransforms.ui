@@ -121,6 +121,9 @@
        </item>
        <item>
         <widget class="QPushButton" name="runTransformButton">
+         <property name="enabled">
+          <bool>false</bool>
+         </property>
          <property name="maximumSize">
           <size>
            <width>48</width>
@@ -134,6 +137,9 @@
        </item>
        <item>
         <widget class="QPushButton" name="previewTransformButton">
+         <property name="enabled">
+          <bool>false</bool>
+         </property>
          <property name="maximumSize">
           <size>
            <width>48</width>
@@ -147,6 +153,9 @@
        </item>
        <item>
         <widget class="QPushButton" name="clearTransformButton">
+         <property name="enabled">
+          <bool>false</bool>
+         </property>
          <property name="maximumSize">
           <size>
            <width>48</width>
@@ -290,7 +299,7 @@
     </widget>
    </item>
    <item>
-    <widget class="ctkPathLineEdit" name="PathLineEdit"/>
+    <widget class="ctkPathLineEdit" name="labelPathLineEdit"/>
    </item>
    <item>
     <widget class="QLabel" name="label_2">
@@ -300,7 +309,7 @@
     </widget>
    </item>
    <item>
-    <widget class="ctkPathLineEdit" name="PathLineEdit_2"/>
+    <widget class="ctkPathLineEdit" name="imagePathLineEdit"/>
    </item>
    <item>
     <widget class="QLabel" name="label_4">
