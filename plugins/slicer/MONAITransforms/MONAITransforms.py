@@ -110,6 +110,8 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.transforms = None
         self.tmpdir = slicer.util.tempDirectory("slicer-monai-transforms", includeDateTime=False)
 
+        self.ctx = TransformCtx()
+
     def setup(self):
         ScriptedLoadableModuleWidget.setup(self)
 
@@ -416,6 +418,7 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
     def onRunTransform(self):
         current_row = self.ui.transformTable.currentRow()
+        print(f"Current Row: {current_row}; Total: {self.ui.transformTable.rowCount}")
         if current_row < 0:
             return
 
@@ -426,66 +429,47 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         label = self.ui.labelPathLineEdit.currentPath
         additional = json.loads(self.ui.textEdit.toPlainText())
 
+        current_name = str(self.ui.transformTable.item(current_row, 1).text())
         d = {"image": image, "label": label, **additional}
-        print(d)
+        d = self.ctx.get_d(name=current_name, d=d)
 
         import monai
-        import numpy as np
 
         print(monai.__version__)
 
-        channel = False
-        for row in range(current_row + 1):
-            name = str(self.ui.transformTable.item(row, 1).text())
-            args = str(self.ui.transformTable.item(row, 2).text())
+        if self.ctx.last_tname != current_name:
+            for row in range(self.ctx.next_t, current_row + 1):
+                name = str(self.ui.transformTable.item(row, 1).text())
+                args = str(self.ui.transformTable.item(row, 2).text())
 
-            exp = f"monai.transforms.{name}({args})"
-            print("")
-            print("===============================================")
-            print(exp)
-            t = eval(exp)
-            d = t(d)
+                exp = f"monai.transforms.{name}({args})"
+                print("")
+                print("====================================================================")
+                print(f"Run:: {exp}")
+                print("====================================================================")
 
-            batch = isinstance(d, list)
-            imageTensor = d["image"] if not batch else d[0]["image"]
-            labelTensor = d["label"] if not batch else d[0]["label"]
-            print(f"Image: {imageTensor.shape}")
-            print(f"Label: {labelTensor.shape}")
+                t = eval(exp)
+                d = t(d)
+                self.ctx.set_d(d, name)
+                self.ui.transformTable.item(row, 0).setIcon(self.icon("icons8-green-circle-48.png"))
 
-            if name == "EnsureChannelFirstd":
-                channel = True
+        next_t = current_row
+        next_tname = str(self.ui.transformTable.item(next_t, 1).text())
+        if current_row + 1 < self.ui.transformTable.rowCount:
+            next_t = current_row + 1
+            next_tname = str(self.ui.transformTable.item(next_t, 1).text())
 
-            self.ui.transformTable.item(row, 0).setIcon(self.icon("icons8-green-circle-48.png"))
+            self.ui.transformTable.selectRow(next_t)
+            for row in range(next_t, self.ui.transformTable.rowCount):
+                self.ui.transformTable.item(row, 0).setIcon(self.icon("icons8-yellow-circle-48.png"))
 
-        if current_row < self.ui.transformTable.rowCount:
-            self.ui.transformTable.selectRow(current_row + 1)
-
-        v = imageTensor.array
-        v = np.squeeze(v, axis=0) if channel else v
-        v = v.transpose()
-        print(f"Display Image: {v.shape}")
+        v = self.ctx.get_tensor(key="image")
         volumeNode = slicer.util.addVolumeFromArray(v)
 
-        l = labelTensor.array
-        l = np.squeeze(l, axis=0) if channel else l
-        l = l.transpose()
-        print(f"Display Label: {l.shape}")
-
+        l = self.ctx.get_tensor(key="label")
         labelNode = slicer.util.addVolumeFromArray(l, nodeClassName="vtkMRMLLabelMapVolumeNode")
 
-        affine = imageTensor.affine.numpy()
-        convert_aff_mat = np.diag([-1, -1, 1, 1])
-        affine = convert_aff_mat @ affine
-
-        dim = affine.shape[0] - 1
-        _origin_key = (slice(-1), -1)
-        _m_key = (slice(-1), slice(-1))
-
-        origin = affine[_origin_key]
-        spacing = np.linalg.norm(affine[_m_key] @ np.eye(dim), axis=0)
-        direction = affine[_m_key] @ np.diag(1 / spacing)
-        print(direction)
-
+        origin, spacing, direction = self.ctx.get_tensor_osd(key="image")
         volumeNode.SetOrigin(origin)
         volumeNode.SetSpacing(spacing)
         # volumeNode.SetIJKToRASDirections(direction)
@@ -498,9 +482,10 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         # view = slicer.app.layoutManager().threeDWidget(0).threeDView()
         # view.resetFocalPoint()
 
+        self.ctx.set_next(next_t, next_tname)
+
     def onApply(self):
-        image = self.ui.imagePathLineEdit.currentPath
-        label = self.ui.labelPathLineEdit.currentPath
+        pass
 
 
 class EditButtonsWidget(qt.QWidget):
@@ -599,3 +584,94 @@ class MONAITransformsTest(ScriptedLoadableModuleTest):
     def test_MONAITransforms1(self):
         self.delayDisplay("Starting the test")
         self.delayDisplay("Test passed")
+
+
+class TransformCtx:
+    def __init__(self):
+        self.d = None
+        self.last_tname = ""
+        self.next_t = 0
+        self.next_tname = ""
+        self.channel = False
+        self.bidx = 0
+        self.original_spatial_shape = None
+        self.original_affine = None
+
+    def reset(self):
+        self.__init__()
+
+    def valid(self) -> bool:
+        return False if self.d is None or self.next_t == 0 else True
+
+    def valid_for_next(self, name) -> bool:
+        return True if name and self.next_tname and name == self.next_tname else False
+
+    def get_d(self, name=None, d=None):
+        if not self.valid_for_next(name):
+            self.reset()
+
+        if not self.valid():
+            print(d)
+            return d
+        return self.d
+
+    def set_d(self, d, name, keys=("image", "label")):
+        for key in keys:
+            key_tensor = d[self.bidx % len(d)][key] if isinstance(d, list) else d[key]
+            print(f"{key}: {key_tensor.shape}")
+
+            if self.original_spatial_shape is None:
+                self.original_spatial_shape = key_tensor.shape
+                self.original_affine = key_tensor.affine.numpy()
+
+        if name == "EnsureChannelFirstd":
+            self.channel = True
+
+        self.d = d
+        self.last_tname = name
+
+    def set_next(self, next_t, next_tname):
+        if self.next_t == next_t and self.next_tname == next_tname:
+            self.bidx += 1
+        else:
+            self.next_t = next_t
+            self.next_tname = next_tname
+
+    def get_tensor(self, key, transpose=True):
+        import numpy as np
+
+        bidx = self.bidx % len(self.d) if isinstance(self.d, list) else -1
+        key_tensor = self.d[bidx][key] if bidx >= 0 else self.d[key]
+        v = key_tensor.array
+        v = np.squeeze(v, axis=0) if self.channel else v
+        v = v.transpose() if transpose else v
+
+        print(f"Display {key}{'[' + str(bidx) + ']' if bidx >= 0 else ''}: {v.shape}")
+        return v
+
+    def get_tensor_osd(self, key, scale=False):
+        import numpy as np
+        from monai.transforms.utils import scale_affine
+
+        bidx = self.bidx % len(self.d) if isinstance(self.d, list) else -1
+        key_tensor = self.d[bidx][key] if bidx >= 0 else self.d[key]
+        actual_shape = key_tensor.shape[1:] if self.channel else key_tensor.shape
+
+        affine = (
+            scale_affine(self.original_affine, self.original_spatial_shape, actual_shape)
+            if scale
+            else key_tensor.affine.numpy()
+        )
+
+        convert_aff_mat = np.diag([-1, -1, 1, 1])
+        affine = convert_aff_mat @ affine
+
+        dim = affine.shape[0] - 1
+        _origin_key = (slice(-1), -1)
+        _m_key = (slice(-1), slice(-1))
+
+        origin = affine[_origin_key]
+        spacing = np.linalg.norm(affine[_m_key] @ np.eye(dim), axis=0)
+        direction = affine[_m_key] @ np.diag(1 / spacing)
+
+        return origin, spacing, direction
