@@ -137,6 +137,7 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.ui.transformTable.connect("cellDoubleClicked(int, int)", self.onEditTransform)
         self.ui.importBundleButton.connect("clicked(bool)", self.onImportBundle)
         self.ui.runTransformButton.connect("clicked(bool)", self.onRunTransform)
+        self.ui.clearTransformButton.connect("clicked(bool)", self.onClearTransform)
 
         # Make sure parameter node is initialized (needed for module reload)
         self.initializeParameterNode()
@@ -308,6 +309,7 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
     def onImportBundle(self):
         if not self.ui.monaiVersionComboBox.currentText:
             return
+
         name = self.ui.bundlesComboBox.currentText
         bundle_dir = os.path.join(self.tmpdir, "bundle")
         this_bundle = os.path.join(bundle_dir, name)
@@ -320,6 +322,9 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         table = self.ui.transformTable
         table.clearContents()
         table.setRowCount(len(transforms))
+
+        # Temporary:: clear current scene
+        slicer.mrmlScene.Clear(0)
 
         for pos, t in enumerate(transforms):
             name = t["_target_"]
@@ -351,6 +356,7 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.ui.moveUpButton.setEnabled(selected and row > 0)
         self.ui.moveDownButton.setEnabled(selected and row < self.ui.transformTable.rowCount - 1)
         self.ui.runTransformButton.setEnabled(selected)
+        self.ui.clearTransformButton.setEnabled(self.ctx.valid())
 
     def onEditTransform(self, row=-1, col=-1):
         print(f"Selected Transform for Edit: {row}")
@@ -363,6 +369,15 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
         dlg = CustomDialog(self.resourcePath, name, self.expression_to_args(exp))
         dlg.exec()
+        if dlg.updatedArgs is not None:
+            new_exp = self.args_to_expression(dlg.updatedArgs)
+            print(f"Old:: {exp}")
+            print(f"New:: {new_exp}")
+            if exp != new_exp:
+                if row < self.ctx.next_t or row == self.ui.transformTable.rowCount - 1:
+                    self.onClearTransform()
+                self.ui.transformTable.item(row, 2).setText(new_exp)
+                print("Updated for new args...")
 
     def onAddTransform(self):
         print(f"Adding Transform: {self.ui.modulesComboBox.currentText}.{self.ui.transformsComboBox.currentText}")
@@ -422,67 +437,78 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         if current_row < 0:
             return
 
-        # Temporary:: clear current scene
-        slicer.mrmlScene.Clear(0)
+        try:
+            qt.QApplication.setOverrideCursor(qt.Qt.WaitCursor)
+            # Temporary:: clear current scene
+            slicer.mrmlScene.Clear(0)
 
-        image = self.ui.imagePathLineEdit.currentPath
-        label = self.ui.labelPathLineEdit.currentPath
-        additional = json.loads(self.ui.textEdit.toPlainText())
+            image = self.ui.imagePathLineEdit.currentPath
+            label = self.ui.labelPathLineEdit.currentPath
+            additional = json.loads(self.ui.textEdit.toPlainText())
 
-        current_name = str(self.ui.transformTable.item(current_row, 1).text())
-        d = {"image": image, "label": label, **additional}
-        d = self.ctx.get_d(name=current_name, d=d)
+            current_name = str(self.ui.transformTable.item(current_row, 1).text())
+            d = {"image": image, "label": label, **additional}
+            d = self.ctx.get_d(name=current_name, d=d)
 
-        import monai
+            import monai
 
-        print(monai.__version__)
+            print(monai.__version__)
 
-        if self.ctx.last_tname != current_name:
-            for row in range(self.ctx.next_t, current_row + 1):
-                name = str(self.ui.transformTable.item(row, 1).text())
-                args = str(self.ui.transformTable.item(row, 2).text())
+            if self.ctx.last_tname != current_name:
+                for row in range(self.ctx.next_t, current_row + 1):
+                    name = str(self.ui.transformTable.item(row, 1).text())
+                    args = str(self.ui.transformTable.item(row, 2).text())
 
-                exp = f"monai.transforms.{name}({args})"
-                print("")
-                print("====================================================================")
-                print(f"Run:: {exp}")
-                print("====================================================================")
+                    exp = f"monai.transforms.{name}({args})"
+                    print("")
+                    print("====================================================================")
+                    print(f"Run:: {exp}")
+                    print("====================================================================")
 
-                t = eval(exp)
-                d = t(d)
-                self.ctx.set_d(d, name)
-                self.ui.transformTable.item(row, 0).setIcon(self.icon("icons8-green-circle-48.png"))
+                    t = eval(exp)
+                    d = t(d)
+                    self.ctx.set_d(d, name)
+                    self.ui.transformTable.item(row, 0).setIcon(self.icon("icons8-green-circle-48.png"))
 
-        next_t = current_row
-        next_tname = str(self.ui.transformTable.item(next_t, 1).text())
-        if current_row + 1 < self.ui.transformTable.rowCount:
-            next_t = current_row + 1
+            next_t = current_row
             next_tname = str(self.ui.transformTable.item(next_t, 1).text())
+            if current_row + 1 < self.ui.transformTable.rowCount:
+                next_t = current_row + 1
+                next_tname = str(self.ui.transformTable.item(next_t, 1).text())
 
-            self.ui.transformTable.selectRow(next_t)
-            for row in range(next_t, self.ui.transformTable.rowCount):
-                self.ui.transformTable.item(row, 0).setIcon(self.icon("icons8-yellow-circle-48.png"))
+                self.ui.transformTable.selectRow(next_t)
+                for row in range(next_t, self.ui.transformTable.rowCount):
+                    self.ui.transformTable.item(row, 0).setIcon(self.icon("icons8-yellow-circle-48.png"))
 
-        v = self.ctx.get_tensor(key="image")
-        volumeNode = slicer.util.addVolumeFromArray(v)
+            v = self.ctx.get_tensor(key="image")
+            volumeNode = slicer.util.addVolumeFromArray(v)
 
-        l = self.ctx.get_tensor(key="label")
-        labelNode = slicer.util.addVolumeFromArray(l, nodeClassName="vtkMRMLLabelMapVolumeNode")
+            l = self.ctx.get_tensor(key="label")
+            labelNode = slicer.util.addVolumeFromArray(l, nodeClassName="vtkMRMLLabelMapVolumeNode")
 
-        origin, spacing, direction = self.ctx.get_tensor_osd(key="image")
-        volumeNode.SetOrigin(origin)
-        volumeNode.SetSpacing(spacing)
-        # volumeNode.SetIJKToRASDirections(direction)
+            origin, spacing, direction = self.ctx.get_tensor_osd(key="image")
+            volumeNode.SetOrigin(origin)
+            volumeNode.SetSpacing(spacing)
+            # volumeNode.SetIJKToRASDirections(direction)
 
-        labelNode.SetOrigin(origin)
-        labelNode.SetSpacing(spacing)
-        slicer.util.setSliceViewerLayers(volumeNode, label=labelNode, fit=True)
+            labelNode.SetOrigin(origin)
+            labelNode.SetSpacing(spacing)
+            slicer.util.setSliceViewerLayers(volumeNode, label=labelNode, fit=True)
 
-        # segmentNode.CreateClosedSurfaceRepresentation()
-        # view = slicer.app.layoutManager().threeDWidget(0).threeDView()
-        # view.resetFocalPoint()
+            # segmentNode.CreateClosedSurfaceRepresentation()
+            # view = slicer.app.layoutManager().threeDWidget(0).threeDView()
+            # view.resetFocalPoint()
 
-        self.ctx.set_next(next_t, next_tname)
+            self.ctx.set_next(next_t, next_tname)
+            self.ui.clearTransformButton.setEnabled(self.ctx.valid())
+        finally:
+            qt.QApplication.restoreOverrideCursor()
+
+    def onClearTransform(self):
+        self.ctx.reset()
+        for row in range(0, self.ui.transformTable.rowCount):
+            self.ui.transformTable.item(row, 0).setIcon(self.icon("icons8-yellow-circle-48.png"))
+        self.ui.clearTransformButton.setEnabled(self.ctx.valid())
 
     def onApply(self):
         pass
@@ -524,6 +550,9 @@ class EditButtonsWidget(qt.QWidget):
 class CustomDialog(qt.QDialog):
     def __init__(self, resourcePath, name, args):
         super().__init__()
+        self.name = name
+        self.args = args
+        self.updatedArgs = None
 
         short_name = name.split(".")[-1]
         self.setWindowTitle(f"Edit - {short_name}")
@@ -547,11 +576,30 @@ class CustomDialog(qt.QDialog):
         table.setColumnWidth(0, 200)
         table.setColumnWidth(1, 400)
 
-        for pos, (k, v) in enumerate(args.items()):
-            table.setItem(pos, 0, qt.QTableWidgetItem(k))
-            table.setItem(pos, 1, qt.QTableWidgetItem(str(v)))
+        for row, (k, v) in enumerate(args.items()):
+            table.setItem(row, 0, qt.QTableWidgetItem(k))
+            table.setItem(row, 1, qt.QTableWidgetItem(str(v)))
 
-        self.ui.buttonBox.accepted.connect(self.done)
+        self.ui.updateButton.connect("clicked(bool)", self.onUpdate)
+
+    def onUpdate(self):
+        args = {}
+        table = self.ui.tableWidget
+        for row in range(table.rowCount):
+            k = table.item(row, 0)
+            k = str(k.text()) if k else None
+            v = table.item(row, 1)
+            v = str(v.text()) if v else None
+            if k:
+                print(f"Row: {row} => {k} => {v}")
+                try:
+                    v = eval(v) if v else v
+                except:
+                    pass
+                args[k] = v
+
+        self.updatedArgs = args
+        self.close()
 
 
 class MONAITransformsLogic(ScriptedLoadableModuleLogic):
