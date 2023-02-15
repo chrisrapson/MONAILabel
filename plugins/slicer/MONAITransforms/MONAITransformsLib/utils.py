@@ -143,16 +143,16 @@ def main():
     for b in sorted({b[0] for b in bundles}):
         print(b)
 
+    bundle_dir = "/tmp/Slicer-sachi/slicer-monai-transforms/bundle"
+    bundle_dir = "C:/Users/salle/AppData/Local/Temp/Slicer/slicer-monai-transforms/bundle"
     # MonaiUtils.download_bundle(
-    #     "spleen_ct_segmentation", "/tmp/Slicer-sachi/slicer-monai-transforms/bundle"
+    #     "spleen_ct_segmentation", bundle_dir
     # )
 
     print("")
     print("Bundle Transforms....")
     print("----------------------------------------------------------------")
-    b_transforms = MonaiUtils.transforms_from_bundle(
-        "spleen_ct_segmentation", "/tmp/Slicer-sachi/slicer-monai-transforms/bundle"
-    )
+    b_transforms = MonaiUtils.transforms_from_bundle("spleen_ct_segmentation", bundle_dir)
     for t in b_transforms:
         print(f"{type(t)} => {t}")
 
@@ -168,4 +168,4 @@ def main2():
 if __name__ == "__main__":
     # pip_install("monai")
     # pip_install("nibabel")
-    main2()
+    main()

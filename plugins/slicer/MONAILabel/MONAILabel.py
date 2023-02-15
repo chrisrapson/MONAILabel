@@ -35,7 +35,7 @@ from slicer.util import VTKObservationMixin
 class MONAILabel(ScriptedLoadableModule):
     def __init__(self, parent):
         ScriptedLoadableModule.__init__(self, parent)
-        self.parent.title = "MONAI Label"
+        self.parent.title = "MONAILabel"
         self.parent.categories = ["MONAI", "Active Learning"]
         self.parent.dependencies = []
         self.parent.contributors = ["NVIDIA, KCL"]

@@ -34,7 +34,7 @@ class MONAILabelReviewer(ScriptedLoadableModule):
 
     def __init__(self, parent):
         ScriptedLoadableModule.__init__(self, parent)
-        self.parent.title = "MONAI Label Reviewer"
+        self.parent.title = "MONAILabel Reviewer"
         self.parent.categories = ["MONAI", "Active Learning"]
         self.parent.dependencies = []
         self.parent.contributors = ["Minh Duc, Do (rAIdiance)"]

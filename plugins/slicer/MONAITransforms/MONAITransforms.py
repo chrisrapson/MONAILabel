@@ -9,6 +9,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import copy
+import json
 import logging
 import os
 
@@ -154,12 +155,8 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.ui.transformTable.setEditTriggers(qt.QTableWidget.NoEditTriggers)
         self.ui.transformTable.setSelectionBehavior(qt.QTableView.SelectRows)
 
-        self.ui.imagePathLineEdit.setCurrentPath(
-            "/localhome/sachi/Datasets/Radiology/Task09_Spleen/imagesTr/spleen_2.nii.gz"
-        )
-        self.ui.labelPathLineEdit.setCurrentPath(
-            "/localhome/sachi/Datasets/Radiology/Task09_Spleen/labelsTr/spleen_2.nii.gz"
-        )
+        self.ui.imagePathLineEdit.setCurrentPath("C:/Dataset/Radiology/Task09_Spleen/imagesTr/spleen_2.nii.gz")
+        self.ui.labelPathLineEdit.setCurrentPath("C:/Dataset/Radiology/Task09_Spleen/labelsTr/spleen_2.nii.gz")
         self.ui.textEdit.setText("{}")
 
         self.refreshVersion()
@@ -418,41 +415,59 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.addTransform(row + 1, None, t, v)
 
     def onRunTransform(self):
-        image = "/localhome/sachi/Datasets/Radiology/Task09_Spleen/imagesTr/spleen_2.nii.gz"
-        label = "/localhome/sachi/Datasets/Radiology/Task09_Spleen/labelsTr/spleen_2.nii.gz"
-        additional = {}
-        data = {"image": image, "label": label}
-        data.update(additional)
-
-        row = self.ui.transformTable.currentRow()
-        if row < 0:
+        current_row = self.ui.transformTable.currentRow()
+        if current_row < 0:
             return
 
-        t = str(self.ui.transformTable.item(row, 1).text())
-        v = str(self.ui.transformTable.item(row, 2).text())
+        # Temporary:: clear current scene
+        slicer.mrmlScene.Clear(0)
+
+        image = self.ui.imagePathLineEdit.currentPath
+        label = self.ui.labelPathLineEdit.currentPath
+        additional = json.loads(self.ui.textEdit.toPlainText())
+
+        d = {"image": image, "label": label, **additional}
+        print(d)
 
         import monai
         import numpy as np
 
         print(monai.__version__)
 
-        exp = f"monai.transforms.{t}({v})"
-        print(exp)
-        t = eval(exp)
+        channel = False
+        for row in range(current_row + 1):
+            name = str(self.ui.transformTable.item(row, 1).text())
+            args = str(self.ui.transformTable.item(row, 2).text())
 
-        print(data)
-        d = t(data)
-        imageTensor = d["image"]
-        labelTensor = d["label"]
-        print(f"Image: {imageTensor.shape}")
-        print(f"Label: {labelTensor.shape}")
+            exp = f"monai.transforms.{name}({args})"
+            print("")
+            print("===============================================")
+            print(exp)
+            t = eval(exp)
+            d = t(d)
+
+            batch = isinstance(d, list)
+            imageTensor = d["image"] if not batch else d[0]["image"]
+            labelTensor = d["label"] if not batch else d[0]["label"]
+            print(f"Image: {imageTensor.shape}")
+            print(f"Label: {labelTensor.shape}")
+
+            if name == "EnsureChannelFirstd":
+                channel = True
+
+            self.ui.transformTable.item(row, 0).setIcon(self.icon("icons8-green-circle-48.png"))
+
+        if current_row < self.ui.transformTable.rowCount:
+            self.ui.transformTable.selectRow(current_row + 1)
 
         v = imageTensor.array
+        v = np.squeeze(v, axis=0) if channel else v
         v = v.transpose()
         print(f"Display Image: {v.shape}")
         volumeNode = slicer.util.addVolumeFromArray(v)
 
         l = labelTensor.array
+        l = np.squeeze(l, axis=0) if channel else l
         l = l.transpose()
         print(f"Display Label: {l.shape}")
 
@@ -482,13 +497,10 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         # segmentNode.CreateClosedSurfaceRepresentation()
         # view = slicer.app.layoutManager().threeDWidget(0).threeDView()
         # view.resetFocalPoint()
-        self.ui.transformTable.item(row, 0).setIcon(self.icon("icons8-green-circle-48.png"))
-        if row < self.ui.transformTable.rowCount:
-            self.ui.transformTable.selectRow(row + 1)
 
     def onApply(self):
-        image = "/localhome/sachi/Datasets/Radiology/Task09_Spleen/imagesTr/spleen_2.nii.gz"
-        label = "/localhome/sachi/Datasets/Radiology/Task09_Spleen/labelsTr/spleen_2.nii.gz"
+        image = self.ui.imagePathLineEdit.currentPath
+        label = self.ui.labelPathLineEdit.currentPath
 
 
 class EditButtonsWidget(qt.QWidget):
