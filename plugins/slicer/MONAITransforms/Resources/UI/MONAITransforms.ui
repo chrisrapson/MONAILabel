@@ -299,7 +299,7 @@
     </widget>
    </item>
    <item>
-    <widget class="ctkPathLineEdit" name="labelPathLineEdit"/>
+    <widget class="ctkPathLineEdit" name="imagePathLineEdit"/>
    </item>
    <item>
     <widget class="QLabel" name="label_2">
@@ -309,7 +309,7 @@
     </widget>
    </item>
    <item>
-    <widget class="ctkPathLineEdit" name="imagePathLineEdit"/>
+    <widget class="ctkPathLineEdit" name="labelPathLineEdit"/>
    </item>
    <item>
     <widget class="QLabel" name="label_4">
